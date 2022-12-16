@@ -1,0 +1,62 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- master
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  registryServerName: "cloudbe.azurecr.io"
+  dockerRegistryServiceConnectionName: "cloudbe-registry-connection"
+  projectName: "cloudbe"
+  imageName: "cloudbe"
+  imageTag: $(build.buildNumber)
+  helmChartVersion: $(build.buildNumber)
+  helmfrom: $(Build.SourcesDirectory)/deploy/k8s/helm
+  helmto: $(Build.ArtifactStagingDirectory)/deploy/k8s/helm
+
+steps:
+- task: Docker@2
+  inputs:
+    command: login
+    containerRegistry: 'cloudbe-registry-connection'
+- task: Maven@3
+  inputs:
+    mavenPomFile: 'pom.xml'
+    options: '-Dspring.profiles.active=dev'
+    mavenOptions: '-Xmx3072m'
+    javaHomeOption: 'JDKVersion'
+    jdkVersionOption: '1.8'
+    jdkArchitectureOption: 'x64'
+    publishJUnitResults: false
+    testResultsFiles: '\*\*/surefire-reports/TEST-\*.xml'
+    goals: 'package'
+- task: Docker@2
+  inputs:
+    repository: 'cloudbe'
+    command: 'buildAndPush'
+    Dockerfile: '**/Dockerfile'
+    tags: $(Build.BuildNumber)
+- task: HelmInstaller@0
+  inputs:
+    helmVersion: '3.10.0'
+    checkLatestHelmVersion: false
+    installKubectl: true
+    checkLatestKubectl: false
+- task: HelmDeploy@0
+  displayName: Helm package
+  inputs:
+    command: package
+    chartPath: '$(System.DefaultWorkingDirectory)/charts/Charts/cloudbe*.tgz'
+    destination: $(Build.ArtifactStagingDirectory)
+    version: $(Build.BuildNumber)
+    updatedependency: true
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'charts'
+    publishLocation: 'Container'
